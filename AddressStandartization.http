@@ -1,0 +1,6 @@
+@AddressStandartization_HostAddress = http://localhost:5134
+
+GET {{AddressStandartization_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
