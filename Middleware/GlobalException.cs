@@ -1,12 +1,20 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Serilog;
 using System.Net;
 using System.Text.Json;
 
 namespace AddressStandartization.Middleware
 {
-	public class GlobalException(RequestDelegate next)
+	public class GlobalExceptionMiddleware
 	{
+		private readonly RequestDelegate _next;
+		private readonly ILogger<GlobalExceptionMiddleware> _logger;
+
+		public GlobalExceptionMiddleware(RequestDelegate next, ILogger<GlobalExceptionMiddleware> logger)
+		{
+			_next = next;
+			_logger = logger;
+		}
+
 		public async Task InvokeAsync(HttpContext context)
 		{
 			//Declaire default variables
@@ -16,62 +24,77 @@ namespace AddressStandartization.Middleware
 
 			try
 			{
-				await next(context);
+				await _next(context);
 
-				// cheack if Response have many requests (429)
+				//Check for various HTTP status codes
+				if (context.Response.HasStarted)
+				{
+					return; 
+				}
+
+				// Check if Response has too many requests (429)
 				if (context.Response.StatusCode == StatusCodes.Status429TooManyRequests)
 				{
 					title = "Warning";
 					message = "Too many requests made";
 					statusCode = StatusCodes.Status429TooManyRequests;
 					await ModifyHeader(context, title, message, statusCode);
-
+					return;
 				}
-				// cheack if Response is not Authorized (401)
-				if (context.Response.StatusCode == StatusCodes.Status401Unauthorized)
+				// Check if Response is not Authorized (400)
+				if (context.Response.StatusCode == StatusCodes.Status400BadRequest)
 				{
 					title = "Warning";
-					message = "You aren't Authorized";
-					statusCode = StatusCodes.Status401Unauthorized;
+					message = "Bad Request";
+					statusCode = StatusCodes.Status400BadRequest;
 					await ModifyHeader(context, title, message, statusCode);
+					return;
 				}
-				// cheack if Response is Forbidden (403)
+				// Check if Response is Forbidden (403)
 				if (context.Response.StatusCode == StatusCodes.Status403Forbidden)
 				{
 					title = "Warning";
 					message = "You are not allowed to access";
 					statusCode = StatusCodes.Status403Forbidden;
 					await ModifyHeader(context, title, message, statusCode);
+					return;
 				}
 			}
 			catch (Exception ex)
 			{
-				// Log Original Exceptions
-				Log.Error(ex, "error");
-				// cheack if Ex is Timeout(408)
+				// Log original exceptions
+				_logger.LogError(ex, "An unhandled exception occurred");
+
+				// Check if Exception is Timeout (408)
 				if (ex is TaskCanceledException || ex is TimeoutException)
 				{
 					title = "Out of Time";
-					message = "request timeout please try again";
+					message = "Request timeout, please try again";
 					statusCode = StatusCodes.Status408RequestTimeout;
-
 				}
-				//If none or Exception caught
-				await ModifyHeader(context, title, message, statusCode);
+
+				// If none or exception caught
+				if (!context.Response.HasStarted)
+				{
+					await ModifyHeader(context, title, message, statusCode);
+				}
 			}
 		}
 
 		private static async Task ModifyHeader(HttpContext context, string title, string message, int statusCode)
 		{
-			// display message to client
+			// Display message to client
 			context.Response.ContentType = "application/json";
-			await context.Response.WriteAsync(JsonSerializer.Serialize(new ProblemDetails()
+			context.Response.StatusCode = statusCode;
+
+			var problemDetails = new ProblemDetails()
 			{
-				Detail = message,
 				Title = title,
-				Status = statusCode,
-			}), CancellationToken.None);
-			return;
+				Detail = message,
+				Status = statusCode
+			};
+
+			await context.Response.WriteAsync(JsonSerializer.Serialize(problemDetails), CancellationToken.None);
 		}
 	}
 }

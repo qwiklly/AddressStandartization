@@ -26,13 +26,23 @@ namespace AddressStandartization.Controllers
 				return BadRequest("Адрес не должен быть пустым");
 			}
 
-			var standardizedAddress = await _addressService.StandardizeAddressAsync(rawAddress);
-			if (standardizedAddress == null)
+			try
 			{
-				return NotFound("Не удалось стандартизировать адрес");
+				var standardizedAddress = await _addressService.StandardizeAddressAsync(rawAddress);
+				return standardizedAddress != null ? Ok(standardizedAddress) : NotFound("Не удалось стандартизировать адрес");
 			}
-
-			return Ok(standardizedAddress);
+			catch (ArgumentException ex)
+			{
+				return BadRequest(ex.Message); 
+			}
+			catch (HttpRequestException)
+			{
+				return StatusCode(502, "Ошибка внешнего API"); 
+			}
+			catch (Exception)
+			{
+				return StatusCode(500, "Внутренняя ошибка сервера"); 
+			}
 		}
 	}
 }

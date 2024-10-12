@@ -2,6 +2,8 @@ using Serilog;
 using AddressStandartization.Middleware;
 using AddressStandartization.Services;
 using System.Reflection;
+using AddressStandartization.Configuration;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,10 +41,18 @@ builder.Services.AddSwaggerGen(c =>
 	c.IncludeXmlComments(xmlPath);
 });
 
-builder.Services.AddHttpClient<IAddressStandardizationService, AddressStandardizationService>(client =>
-{
-	client.BaseAddress = new Uri(builder.Configuration["Dadata:ApiUrl"]!);
-});
+builder.Services.Configure<DadataSettings>(builder.Configuration.GetSection("Dadata"));
+
+builder.Services.AddHttpClient<IAddressStandardizationService, AddressStandardizationService>()
+	.ConfigureHttpClient((sp, client) =>
+	{
+		var dadataSettings = sp.GetRequiredService<IOptions<DadataSettings>>().Value;
+		client.BaseAddress = new Uri(dadataSettings.ApiUrl!);
+		client.DefaultRequestHeaders.Add("Authorization", $"Token {dadataSettings.ApiKey}");
+		client.DefaultRequestHeaders.Add("X-Secret", dadataSettings.SecretKey);
+		client.DefaultRequestHeaders.Add("Accept", "application/json");
+	});
+
 builder.Services.AddAutoMapper(typeof(Program));
 
 var app = builder.Build();
